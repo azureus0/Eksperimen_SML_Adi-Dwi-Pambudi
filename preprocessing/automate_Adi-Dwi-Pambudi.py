@@ -1,107 +1,105 @@
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from joblib import dump
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.model_selection import train_test_split
+import os
 import pandas as pd
-import numpy as np
 
-def preprocess_data(data, target_column, save_path, file_path):
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-    # 1. Cleaning Awal
-    data = data.drop_duplicates()
-    if 'student_id' in data.columns:
-        data = data.drop(columns=['student_id']) 
-    data = data.dropna()
 
-    # 2. Penanganan Outlier (IQR) 
-    num_cols = ['age', 'study_hours', 'class_attendance', 'sleep_hours']
-    for feature in num_cols:
-        Q1 = data[feature].quantile(0.25)
-        Q3 = data[feature].quantile(0.75)
+def preprocessing_pipeline(
+    input_path,
+    output_dir="Exam_Score_preprocessing",
+    test_size=0.1,
+    random_state=42
+):
+    # 1. Load dataset
+    df = pd.read_csv(input_path)
+
+    # 2. Drop duplicates
+    df = df.drop_duplicates()
+
+    # 3. Drop missing values
+    df = df.dropna()
+
+    # 4. Drop kolom ID
+    df = df.drop(columns=['student_id'])
+
+    # 5. Drop outlier (IQR)
+    features_to_check = ['study_hours', 'sleep_hours']
+
+    for feature in features_to_check:
+        Q1 = df[feature].quantile(0.25)
+        Q3 = df[feature].quantile(0.75)
         IQR = Q3 - Q1
         lower_bound = Q1 - 1.5 * IQR
         upper_bound = Q3 + 1.5 * IQR
-        data = data[(data[feature] >= lower_bound) & (data[feature] <= upper_bound)] #
+        df = df[(df[feature] >= lower_bound) & (df[feature] <= upper_bound)]
 
-    # 3. Binning 'sleep_hours' 
-    data['sleep_hours_binned'] = pd.cut(
-        data['sleep_hours'], 
-        bins=3, 
+    # 6. Binning sleep_hours
+    df['sleep_hours_binned'] = pd.cut(
+        df['sleep_hours'],
+        bins=3,
         labels=['Kurang', 'Cukup', 'Baik']
-    ) 
-    
-    # Drop kolom asli yang sudah di-binning agar tidak masuk ke scaler
-    data = data.drop(columns='sleep_hours') 
-
-
-    # Mendapatkan nama kolom untuk fitur (tanpa target)
-    column_names = data.columns.drop(target_column) 
-
-    # Menyimpan nama kolom sebagai header tanpa data (CSV)
-    df_header = pd.DataFrame(columns=column_names)
-    df_header.to_csv(file_path, index=False) 
-    print(f"Nama kolom berhasil disimpan ke: {file_path}")
-
-    # Menentukan fitur numerik dan kategoris secara otomatis
-    # Sesuai eksperimenmu: age, study_hours, dan class_attendance masuk scaling
-    numeric_features = ['age', 'study_hours', 'class_attendance']
-    categorical_features = data.select_dtypes(include=['object', 'category']).columns.tolist()
-
-    if target_column in categorical_features:
-        categorical_features.remove(target_column)
-
-    # Pipeline untuk fitur numerik
-    numeric_transformer = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='mean')),
-        ('scaler', StandardScaler()) 
-    ])
-
-    # Pipeline untuk fitur kategorik
-    categorical_transformer = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
-        ('encoder', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
-    ])
-
-    # Column Transformer (Menggabungkan num dan cat)
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ('num', numeric_transformer, numeric_features),
-            ('cat', categorical_transformer, categorical_features)
-        ]
     )
 
-    # Memisahkan target (y) dan fitur (X)
-    X = data.drop(columns=[target_column])
-    y = data[target_column]
+    # 7. Drop sleep_hours
+    df = df.drop(columns=['sleep_hours'])
 
-    # Membagi data (Splitting 80/20)
+    # 8. Split X & y
+    X = df.drop(columns=['exam_score'])
+    y = df['exam_score']
+
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    ) #
+        X,
+        y,
+        test_size=test_size,
+        random_state=random_state,
+        shuffle=True
+    )
 
-    # Fitting dan transformasi data 
-    # Fit pada training set, transform pada training dan testing set
-    X_train = preprocessor.fit_transform(X_train)
-    X_test = preprocessor.transform(X_test)
+    # 9. One-Hot Encoding
+    categorical_cols = X_train.select_dtypes(
+        include=['object', 'category']
+    ).columns
 
-    # Simpan objek preprocessor (Pipeline) ke file .joblib
-    dump(preprocessor, save_path)
-    print(f"Pipeline preprocessing disimpan ke: {save_path}")
+    encoder = OneHotEncoder(
+        sparse_output=False,
+        handle_unknown="ignore"
+    ).set_output(transform="pandas")
 
-    return X_train, X_test, y_train, y_test
+    X_train_cat = encoder.fit_transform(X_train[categorical_cols])
+    X_test_cat  = encoder.transform(X_test[categorical_cols])
+
+    X_train = X_train.drop(columns=categorical_cols)
+    X_test  = X_test.drop(columns=categorical_cols)
+
+    X_train = pd.concat([X_train, X_train_cat], axis=1)
+    X_test  = pd.concat([X_test,  X_test_cat], axis=1)
+
+    # 10. Scaling numerik
+    numerical_cols = ['age', 'study_hours', 'class_attendance']
+
+    scaler = StandardScaler()
+    X_train[numerical_cols] = scaler.fit_transform(X_train[numerical_cols])
+    X_test[numerical_cols]  = scaler.transform(X_test[numerical_cols])
+
+    # 11. Gabungkan & save
+    train_df = pd.concat(
+        [X_train, y_train.reset_index(drop=True)],
+        axis=1
+    )
+
+    test_df = pd.concat(
+        [X_test, y_test.reset_index(drop=True)],
+        axis=1
+    )
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    train_df.to_csv(f"{output_dir}/train.csv", index=False)
+    test_df.to_csv(f"{output_dir}/test.csv", index=False)
+
+    return train_df, test_df
+
 
 if __name__ == "__main__":
-    try:
-        df_raw = pd.read_csv('Exam_Score_Prediction_raw.csv')
-        # Menjalankan fungsi dengan target 'exam_score'
-        X_train, X_test, y_train, y_test = preprocess_data(
-            data=df_raw, 
-            target_column='exam_score', 
-            save_path='preprocessor_adi.joblib', 
-            file_path='data_header_adi.csv'
-        )
-        print("Proses Automasi Preprocessing Selesai!")
-    except Exception as e:
-        print(f"Gagal menjalankan otomasi: {e}")
+    preprocessing_pipeline("Exam_Score_raw.csv")

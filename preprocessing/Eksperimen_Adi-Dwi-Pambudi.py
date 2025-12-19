@@ -16,13 +16,14 @@
 
 # Pada tahap ini, Anda perlu mengimpor beberapa pustaka (library) Python yang dibutuhkan untuk analisis data dan pembangunan model machine learning atau deep learning.
 
-# In[652]:
+# In[116]:
 
 
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import os
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
@@ -35,10 +36,10 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 # 
 # Jika dataset berupa unstructured data, silakan sesuaikan dengan format seperti kelas Machine Learning Pengembangan atau Machine Learning Terapan
 
-# In[653]:
+# In[117]:
 
 
-file_path = "../Exam_Score_Prediction_raw.csv"
+file_path = "../Exam_Score_raw.csv"
 df = pd.read_csv(file_path)
 
 df.head()
@@ -50,31 +51,31 @@ df.head()
 # 
 # Tujuan dari EDA adalah untuk memperoleh wawasan awal yang mendalam mengenai data dan menentukan langkah selanjutnya dalam analisis atau pemodelan.
 
-# In[654]:
+# In[118]:
 
 
 df.info()
 
 
-# In[655]:
+# In[119]:
 
 
 df.shape
 
 
-# In[656]:
+# In[120]:
 
 
 df.isnull().sum()
 
 
-# In[657]:
+# In[121]:
 
 
 df.duplicated().sum()
 
 
-# In[658]:
+# In[122]:
 
 
 df.describe()
@@ -82,7 +83,7 @@ df.describe()
 
 # ### Distribusi Fitur Numerik
 
-# In[659]:
+# In[123]:
 
 
 df.hist(figsize = (12,10))
@@ -91,13 +92,13 @@ plt.show()
 
 # ### Distribusi Fitur Kategorikal
 
-# In[660]:
+# In[124]:
 
 
 # kolom kategorikal
-categorical_cols = df.select_dtypes(include=['object'])
+eda_categorical_cols = df.select_dtypes(include=['object'])
 
-for feature in categorical_cols:
+for feature in eda_categorical_cols:
     fig, ax = plt.subplots(1, 2, figsize=(12, 5))
 
     # 1. Bar Chart (Kiri)
@@ -116,25 +117,25 @@ for feature in categorical_cols:
     plt.show()
 
 
-# In[661]:
+# In[125]:
 
 
-numerical_cols = df.select_dtypes(include=np.number).columns.drop('student_id')
+eda_numerical_cols = df.select_dtypes(include=np.number).columns.drop('student_id')
 
 plt.figure(figsize=(12,10))
-sns.heatmap(df[numerical_cols].corr(), annot=True, cmap='coolwarm')
+sns.heatmap(df[eda_numerical_cols].corr(), annot=True, cmap='coolwarm')
 plt.show()
 
 
-# In[662]:
+# In[126]:
 
 
 # Box Plot Outlier
-n = len(numerical_cols)
+n = len(eda_numerical_cols)
 
 plt.figure(figsize=(15, 5))
 
-for i, col in enumerate(numerical_cols, 1):
+for i, col in enumerate(eda_numerical_cols, 1):
     plt.subplot(1, n, i)
     sns.boxplot(y=df[col], color='skyblue')
     plt.title(f'{col}')
@@ -162,16 +163,25 @@ plt.show()
 
 # ### Drop Duplicates
 
-# In[663]:
+# In[127]:
 
 
 df.drop_duplicates(inplace=True)
 df.duplicated().sum()
 
 
+# ### Drop Missing Values
+
+# In[128]:
+
+
+df = df.dropna()
+df.isnull().sum()
+
+
 # ### Drop Columns with 'id'
 
-# In[664]:
+# In[129]:
 
 
 columns_to_drop = ['student_id']
@@ -179,18 +189,9 @@ df = df.drop(columns=columns_to_drop)
 df.info()
 
 
-# ### Drop Missing Values
-
-# In[665]:
-
-
-df = df.dropna()
-df.isnull().sum()
-
-
 # ### Drop Outlier
 
-# In[666]:
+# In[130]:
 
 
 # Features to check for outliers
@@ -208,7 +209,7 @@ for feature in features_to_check:
 
 # ### Binning
 
-# In[667]:
+# In[131]:
 
 
 df['sleep_hours_binned'] = pd.cut(df['sleep_hours'], bins=3, labels=['Kurang', 'Cukup', 'Baik'])
@@ -218,48 +219,61 @@ df = df.drop(columns='sleep_hours')
 df[['sleep_hours_binned']].head()
 
 
-# ### Encoding Columns
-
-# In[668]:
-
-
-categorical_cols = df.select_dtypes(include=['object', 'category']).columns
-
-encoder = OneHotEncoder(sparse_output=False, dtype=int).set_output(transform="pandas")
-df_encoded = encoder.fit_transform(df[categorical_cols])
-df_final = pd.concat([df.drop(columns=categorical_cols), df_encoded], axis=1)
-
-df_final.head()
-
-
 # ### Splitting
 
-# In[669]:
+# In[132]:
 
 
-X = df_final.drop(columns=['exam_score'])
-y = df_final['exam_score']
+X = df.drop(columns=['exam_score'])
+y = df['exam_score']
 
-# splitting (80% Train, 20% Test)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.1, random_state=42, shuffle=True
+)
 
 print(f"Data Train: {X_train.shape[0]} baris")
 print(f"Data Test: {X_test.shape[0]} baris")
 
 
-# In[670]:
+# ### Encoding (One-Hot Encoding)
+
+# In[133]:
 
 
-X_train.info()
+categorical_cols = X_train.select_dtypes(include=['object', 'category']).columns
 
 
-# ### Scaling (Standarisasi)
-
-# In[ ]:
+# In[134]:
 
 
-# numerical_cols = X_train.select_dtypes(include=['number']).columns
+encoder = OneHotEncoder(
+    sparse_output=False,
+    handle_unknown="ignore"
+).set_output(transform="pandas")
+
+# fit encoder di train
+X_train_cat = encoder.fit_transform(X_train[categorical_cols])
+X_test_cat  = encoder.transform(X_test[categorical_cols])
+
+# drop kolom kategorikal lama
+X_train = X_train.drop(columns=categorical_cols)
+X_test  = X_test.drop(columns=categorical_cols)
+
+# gabungkan dengan hasil encoding
+X_train = pd.concat([X_train, X_train_cat], axis=1)
+X_test  = pd.concat([X_test,  X_test_cat], axis=1)
+
+
+# ### Scaling (Standardization)
+
+# In[135]:
+
+
 numerical_cols = ['age', 'study_hours', 'class_attendance']
+
+
+# In[136]:
+
 
 scaler = StandardScaler()
 
@@ -271,8 +285,14 @@ X_train.head()
 
 # # **Save Dataset**
 
-# In[672]:
+# In[137]:
 
 
-df_final.to_csv('Exam_Score_Prediction_preprocessing.csv', index=False)
+os.makedirs("Exam_Score_preprocessing", exist_ok=True)
+
+train_df = pd.concat([X_train, y_train.reset_index(drop=True)], axis=1)
+test_df  = pd.concat([X_test,  y_test.reset_index(drop=True)], axis=1)
+
+train_df.to_csv("Exam_Score_preprocessing/train.csv", index=False)
+test_df.to_csv("Exam_Score_preprocessing/test.csv", index=False)
 
