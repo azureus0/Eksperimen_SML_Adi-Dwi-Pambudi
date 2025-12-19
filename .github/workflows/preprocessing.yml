@@ -34,7 +34,7 @@ jobs:
 
       # 5. Upload processed datasets sebagai artifact
       - name: Upload preprocessed datasets
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: preprocessed-datasets
           path: Exam_Score_preprocessing/
