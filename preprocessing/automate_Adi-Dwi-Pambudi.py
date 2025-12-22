@@ -84,12 +84,12 @@ def preprocessing_pipeline(
 
     # 11. Gabungkan & save
     train_df = pd.concat(
-        [X_train, y_train.reset_index(drop=True)],
+        [X_train.reset_index(drop=True), y_train.reset_index(drop=True)],
         axis=1
     )
 
     test_df = pd.concat(
-        [X_test, y_test.reset_index(drop=True)],
+        [X_test.reset_index(drop=True), y_test.reset_index(drop=True)],
         axis=1
     )
 
